@@ -1,0 +1,74 @@
+version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.9.5"          # pin TF version
+    AWS_REGION: "ap-south-1"
+    TF_BACKEND_BUCKET: "terraform-states-prod"
+    TF_BACKEND_KEY: "customerX/network/terraform.tfstate"
+    TF_BACKEND_TABLE: "terraform-locks"
+  parameter-store:
+    TF_VARS_JSON: "/terraform/customerX/tfvars-json"   # optional: store tfvars JSON in SSM in B
+  secrets-manager:
+    # or use Secrets Manager instead of SSM, e.g. "TF_VARS_JSON": "terraform/customerX/tfvars-json:GITHUB"
+    # leave empty if not using
+
+phases:
+  install:
+    commands:
+      - echo "Installing Terraform..."
+      - curl -sLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+      - unzip -o /tmp/terraform.zip -d /usr/local/bin
+      - terraform -version
+      - aws --version
+
+  pre_build:
+    commands:
+      - echo "Assuming StateAccessRole in Account B for backend/state..."
+      - |
+        CREDS=$(aws sts assume-role \
+          --role-arn arn:aws:iam::<ACCOUNT_B_ID>:role/StateAccessRole \
+          --role-session-name TFStateSession)
+        export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r .Credentials.AccessKeyId)
+        export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r .Credentials.SecretAccessKey)
+        export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r .Credentials.SessionToken)
+        aws sts get-caller-identity
+
+      - echo "Fetching tfvars (optional) from SSM/Secrets in B..."
+      # If using SSM Parameter Store to hold a JSON blob of variables:
+      - |
+        if [ -n "${TF_VARS_JSON}" ]; then
+          echo "$TF_VARS_JSON" > tf.auto.tfvars.json
+        fi
+
+  build:
+    commands:
+      - echo "Terraform init with explicit backend-config..."
+      - terraform init \
+          -backend-config="bucket=${TF_BACKEND_BUCKET}" \
+          -backend-config="key=${TF_BACKEND_KEY}" \
+          -backend-config="region=${AWS_REGION}" \
+          -backend-config="dynamodb_table=${TF_BACKEND_TABLE}" \
+          -backend-config="encrypt=true"
+
+      - echo "Terraform validate & plan (provider will assume Account C role)..."
+      - terraform fmt -check
+      - terraform validate
+      - terraform plan -out=tfplan
+
+  post_build:
+    commands:
+      - |
+        if [ "${APPLY}" = "true" ]; then
+          echo "Applying..."
+          terraform apply -auto-approve tfplan
+        else
+          echo "Skipping apply (APPLY!=true)."
+        fi
+artifacts:
+  files:
+    - tfplan
+    - .terraform.lock.hcl
+    - "**/*.tf"
+    - "**/*.md"
+    - "**/*.log"
