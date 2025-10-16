@@ -27,7 +27,7 @@ phases:
       - echo "Assuming StateAccessRole in Account B for backend/state..."
       - |
         CREDS=$(aws sts assume-role \
-          --role-arn arn:aws:iam::<ACCOUNT_B_ID>:role/StateAccessRole \
+          --role-arn arn:aws:iam::184585832362:role/CodeBuildTerraformRole \
           --role-session-name TFStateSession)
         export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r .Credentials.AccessKeyId)
         export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r .Credentials.SecretAccessKey)
