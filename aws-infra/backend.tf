@@ -1,8 +1,8 @@
 terraform {
   backend "s3" {
-    bucket         = "var.aeonx-tfstate-backend/Ashapura Logistic/"
-    key            = "terraform.tfstate"
-    region         = "us-east-1"
+    bucket         = "aeonx-tfstates-backend"
+    key            = "ashapura-logistic/terraform.tfstate"
+    region         = "ap-south-1"
     dynamodb_table = "terraform-locks"
     encrypt        = true
   }
